@@ -1,0 +1,81 @@
+name: Build and publish Windows 1.2.0
+
+on:
+  push:
+    branches: [release/windows-v1.2.0]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-windows-v1.2.0
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 52bf0df5fe287dfd0fd4059314c74420d8468414
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test
+        run: python -m unittest discover -s tests -v
+      - name: Build executable
+        run: python -m PyInstaller --noconfirm --onefile --windowed --noupx --name VLESS-Manager --icon resources/app.ico --version-file resources/version_info.txt --add-data 'resources;resources' --collect-all paramiko --paths . main.py
+      - name: Verify executable and package
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import struct
+          import subprocess
+          import tempfile
+          import zipfile
+
+          root = Path.cwd()
+          exe = root / 'dist' / 'VLESS-Manager.exe'
+          data = exe.read_bytes()
+          assert data[:2] == b'MZ'
+          pe = struct.unpack_from('<I', data, 0x3c)[0]
+          assert data[pe:pe+4] == b'PE\x00\x00'
+          assert struct.unpack_from('<H', data, pe+4)[0] == 0x8664
+          with tempfile.TemporaryDirectory(prefix='vless-windows-smoke-') as temp:
+              report = Path(temp) / 'smoke.json'
+              env = dict(os.environ, VLESS_MANAGER_DATA=str(Path(temp) / 'profiles'))
+              subprocess.run([str(exe), '--self-test', str(report)], env=env, check=True, timeout=120)
+              state = json.loads(report.read_text(encoding='utf-8'))
+          assert state['ok'] is True, state
+          assert state['readonly_default'] is True, state
+          assert state['version'] == '1.2.0', state
+          assert len(state['tabs']) == 7, state
+          state.update(platform='Windows', architecture='x86_64', windows_version=platform.platform(), signing='unsigned')
+          (root / 'dist' / 'windows-validation.json').write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+          archive = root / 'dist' / 'VLESS-Manager-1.2.0-Windows-x64.zip'
+          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
+              bundle.write(exe, exe.name)
+              bundle.write(root.parent / 'THIRD-PARTY.txt', 'THIRD-PARTY.txt')
+              for license in sorted((root / 'resources' / 'licenses').glob('*')):
+                  bundle.write(license, 'licenses/' + license.name)
+          checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+          (root / 'dist' / 'Windows-SHA256SUMS.txt').write_text(checksum + '  ' + archive.name + '\n', encoding='utf-8')
+          print(json.dumps(state, ensure_ascii=False, indent=2))
+      - name: Upload Windows files to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload v1.2.0 dist/VLESS-Manager-1.2.0-Windows-x64.zip dist/windows-validation.json dist/Windows-SHA256SUMS.txt
