@@ -1,0 +1,67 @@
+name: Publish macOS 1.2.0 release
+
+on:
+  push:
+    branches: [release/macos-v1.2.0]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-macos-v1.2.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download verified macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: VLESS-Manager-macOS
+          run-id: 40766687294
+          github-token: ${{ github.token }}
+          path: dist
+      - name: Verify validation report and archive
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          root = pathlib.Path('dist')
+          state = json.loads((root / 'macos-validation.json').read_text())
+          assert state['ok'] is True, state
+          assert state['readonly_default'] is True, state
+          assert state['architecture'] == 'arm64', state
+          assert len(state['tabs']) == 7, state
+          archive = root / 'VLESS-Manager-1.2.0-macOS-arm64.zip'
+          with zipfile.ZipFile(archive) as bundle:
+              assert bundle.testzip() is None
+              assert 'VLESS Manager.app/Contents/Info.plist' in bundle.namelist()
+          print(json.dumps(state, ensure_ascii=False, indent=2))
+          PY
+          cd dist
+          sha256sum VLESS-Manager-1.2.0-macOS-arm64.zip > SHA256SUMS.txt
+      - name: Publish release with application and report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          VLESS Manager 1.2.0 для macOS 11 и новее, Apple Silicon (arm64).
+
+          Скачайте `VLESS-Manager-1.2.0-macOS-arm64.zip`, распакуйте и перенесите `VLESS Manager.app` в Applications.
+
+          Сборка прошла автоматические тесты, проверку локальной подписи и пробный запуск на macOS. Отчёт проверки и SHA-256 архива приложены.
+
+          Подпись ad-hoc, без Developer ID и нотариализации Apple. При первом запуске macOS может запросить разрешение на открытие.
+
+          Эта сборка предназначена для Mac с Apple Silicon. Сборка для Intel в этот релиз не включена.
+          NOTES
+          gh release create v1.2.0 \
+            --target 52bf0df5fe287dfd0fd4059314c74420d8468414 \
+            --title 'VLESS Manager 1.2.0 — macOS Apple Silicon' \
+            --notes-file release-notes.md \
+            dist/VLESS-Manager-1.2.0-macOS-arm64.zip \
+            dist/macos-validation.json \
+            dist/SHA256SUMS.txt
