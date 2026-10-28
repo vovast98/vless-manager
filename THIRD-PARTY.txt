@@ -1,0 +1,17 @@
+VLESS Manager 1.0 — third-party components
+
+The executable includes Python, Tcl/Tk, Paramiko, cryptography/OpenSSL, bcrypt, PyNaCl/libsodium, CFFI and their dependencies. PyInstaller is used with its bootloader exception.
+
+paramiko 4.0.0
+
+cryptography 50.0.2
+
+bcrypt 5.0.0
+
+PyNaCl 1.6.2
+
+cffi 2.1.1
+
+invoke 3.0.3
+
+pycparser 3.11

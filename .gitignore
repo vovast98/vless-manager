@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv*/
+vendor*/
+build/
+dist/
+*.spec
+.DS_Store
+profiles.json
+known_hosts
+*.pem
+*.key
+.env
+.env.*

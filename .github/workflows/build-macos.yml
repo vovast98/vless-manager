@@ -1,0 +1,35 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/build-macos.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: 'app/requirements*.txt'
+      - name: Install dependencies
+        run: python -m pip install -r app/requirements-macos.txt
+      - name: Test and build native app
+        run: python app/build_macos.py
+      - name: Upload app and validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: VLESS-Manager-macOS
+          path: |
+            app/dist/VLESS-Manager-*-macOS-*.zip
+            app/dist/macos-validation.json
+          if-no-files-found: error
+          retention-days: 14
